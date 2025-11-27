@@ -5,11 +5,16 @@
 
 # Sreamlit and extensions
 streamlit
-requests
-
-# bigquery
+pandas
 altair
-sqlalchemy
+
+google-cloud-bigquery
+google-auth
+google-auth-oauthlib
+google-cloud-bigquery-storage
+
+db-dtypes
+pyarrow
 
 # If you want to display datasets, or if your API returns you dataframes,
 # you might need to add some extra stuff hereunder, e.g. pandas
