@@ -4,15 +4,13 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-# import pandas as pd
-# from datetime import datetime, timedelta
 from connect.bq import load_data_from_bq
 
 # --- Setup & Config ---
 if "API_URI" in os.environ:
     BASE_URI = st.secrets[os.environ.get("API_URI")]
 else:
-    BASE_URI = st.secrets.get("cloud_api_uri", "")  # Added .get() for safety
+    BASE_URI = st.secrets.get("cloud_api_uri", "")
 
 BASE_URI = BASE_URI if BASE_URI.endswith("/") else BASE_URI + "/"
 url = BASE_URI + "predict"
@@ -48,7 +46,7 @@ def page_root_cause():
     )
 
     # 1. Time Series Chart
-    # Removed the date filter "INTERVAL 1 YEAR" to ensure dummy data from any date shows up
+    # CAST review_date (DATETIME) to DATE for daily aggregation
     ts_query = f"""
         SELECT
             DATE(review_date) as date,
@@ -101,7 +99,7 @@ def page_root_cause():
         # 3. Root Cause Query
         st.subheader(f"Top Negative Topics ({start_date} to {end_date})")
 
-        # Cleaned 'predicted_topic' to remove "Topic: " prefix for cleaner charts
+        # Cleaned 'predicted_topic' to remove "Topic: " prefix
         topic_query = f"""
             SELECT
                 REPLACE(predicted_topic, 'Topic: ', '') as simple_topic,
@@ -142,7 +140,6 @@ def page_geo_hotspots():
     st.title("🌍 Geographical Hotspots")
     st.markdown("**Goal:** Identify regions with specific support or logistics issues.")
 
-    # Lowered threshold to > 0 to ensure dummy data shows up
     geo_query = f"""
         SELECT
             location,
@@ -151,7 +148,6 @@ def page_geo_hotspots():
         FROM {BQ_TABLE_REF}
         WHERE location IS NOT NULL
           AND location != ''
-          AND REGEXP_CONTAINS(TRIM(location), r'^[A-Za-z]{2}$')  -- only 2-letter alpha codes
         GROUP BY 1
         HAVING total_reviews > 0
         ORDER BY negative_pct DESC
@@ -204,16 +200,23 @@ def page_product_features():
     """
     )
 
-    # FIX: Included 'METRIC' label so "price" shows up
-    # FIX: Lowered threshold to > 0
+    # --- UPDATED QUERY FOR NEW DATA FORMAT ---
+    # New Format: [('text', 'LABEL'), ('text', 'LABEL')]
+    # Method: Use REGEXP_EXTRACT_ALL to find the 'text' where the label is PRODUCT or METRIC.
+    # Pattern explanation: \('([^']*)', '(?:PRODUCT|METRIC)'\)
+    #   \('      -> matches literal ('
+    #   ([^']*)  -> Capture Group 1: Matches the text (assuming no internal single quotes)
+    #   ', '     -> matches literal ', '
+    #   (?:...)  -> Non-capturing group for OR logic
+    #   '\)      -> matches literal ')
+
     feature_query = f"""
         SELECT
-            TRIM(LOWER(JSON_EXTRACT_SCALAR(entity, '$.text'))) as feature,
+            TRIM(LOWER(matches)) as feature,
             COUNT(*) as mentions,
             SAFE_DIVIDE(COUNTIF(predicted_sentiment = 'positive'), COUNT(*)) as positive_pct
         FROM {BQ_TABLE_REF},
-        UNNEST(JSON_EXTRACT_ARRAY(extracted_entities)) as entity
-        WHERE JSON_EXTRACT_SCALAR(entity, '$.label') IN ('PRODUCT', 'METRIC')
+        UNNEST(REGEXP_EXTRACT_ALL(extracted_entities, r"\('([^']*)', '(?:PRODUCT|METRIC)'\)")) as matches
         GROUP BY 1
         HAVING mentions > 0
         ORDER BY mentions DESC
@@ -251,10 +254,9 @@ def page_product_features():
 
         st.markdown("---")
 
-        # 2. Display Best 3 and Lowest 3 (Requested Feature)
+        # 2. Display Best 3 and Lowest 3
         col1, col2 = st.columns(2)
 
-        # Sort by positive percentage
         df_sorted = df.sort_values(by="positive_pct", ascending=False)
 
         with col1:
@@ -269,9 +271,7 @@ def page_product_features():
 
         with col2:
             st.error("⚠️ **Lowest 3 Performing Features**")
-            bottom_3 = df_sorted.tail(3).sort_values(
-                by="positive_pct", ascending=True
-            )  # Sort worst to top
+            bottom_3 = df_sorted.tail(3).sort_values(by="positive_pct", ascending=True)
             for index, row in bottom_3.iterrows():
                 st.metric(
                     label=row["feature"].title(),
@@ -288,31 +288,28 @@ def page_emerging_trends():
     st.title("🚀 Emerging Trends & Requests")
     st.markdown("**Goal:** Identifies topics exploding in volume (Month-over-Month).")
 
-    # FIX: Removed restrictive date filters for dummy data
-    # Logic: Just compare two arbitrary windows or simple counts if data is sparse
+    # Using CAST(review_date as DATE) to be safe with DATETIME comparison
     trend_query = f"""
         WITH recent_stats AS (
             SELECT predicted_topic, COUNT(review_id) as vol_recent
             FROM {BQ_TABLE_REF}
-            -- Relaxed window for dummy data visibility
-            WHERE review_date >= '2024-09-01'
+            WHERE CAST(review_date AS DATE) >= '2024-09-01'
             GROUP BY 1
         ),
         past_stats AS (
             SELECT predicted_topic, COUNT(review_id) as vol_past
             FROM {BQ_TABLE_REF}
-            -- Relaxed window for dummy data visibility
-            WHERE review_date < '2024-09-01'
+            WHERE CAST(review_date AS DATE) < '2024-09-01'
             GROUP BY 1
         )
         SELECT
             REPLACE(r.predicted_topic, 'Topic: ', '') as simple_topic,
             r.vol_recent,
-            COALESCE(p.vol_past, 1) as vol_past, -- Avoid division by zero
+            COALESCE(p.vol_past, 1) as vol_past,
             SAFE_DIVIDE((r.vol_recent - COALESCE(p.vol_past, 0)), COALESCE(p.vol_past, 1)) as growth_rate
         FROM recent_stats r
         LEFT JOIN past_stats p ON r.predicted_topic = p.predicted_topic
-        WHERE r.vol_recent > 0 -- Show everything
+        WHERE r.vol_recent > 0
         ORDER BY growth_rate DESC
         LIMIT 10
     """
@@ -351,19 +348,19 @@ def page_competition():
     st.title("⚔️ Competitive Intelligence")
     st.markdown("**Goal:** Analyze sentiment when customers mention competitors.")
 
-    # FIX: Added 'TEAM' and 'PRODUCT' to labels because dummy data HAS NO 'ORG' tags.
-    # In production, you would restrict this to 'ORG'.
+    # --- UPDATED QUERY FOR NEW DATA FORMAT ---
+    # Pattern: \('([^']*)', '(?:ORG|TEAM|PRODUCT)'\)
+    # Captures text where label is ORG, TEAM, or PRODUCT
     comp_query = f"""
         SELECT
-            TRIM(JSON_EXTRACT_SCALAR(entity, '$.text')) as competitor,
+            TRIM(matches) as competitor,
             COUNT(*) as mentions,
             SAFE_DIVIDE(COUNTIF(predicted_sentiment = 'negative'), COUNT(*)) as negative_association_pct
         FROM {BQ_TABLE_REF},
-        UNNEST(JSON_EXTRACT_ARRAY(extracted_entities)) as entity
-        WHERE JSON_EXTRACT_SCALAR(entity, '$.label') IN ('ORG', 'TEAM', 'PRODUCT')
-        AND LOWER(JSON_EXTRACT_SCALAR(entity, '$.text')) NOT LIKE '%voicelens%'
+        UNNEST(REGEXP_EXTRACT_ALL(extracted_entities, r"\('([^']*)', '(?:ORG|TEAM|PRODUCT)'\)")) as matches
+        WHERE LOWER(matches) NOT LIKE '%voicelens%'
         -- Exclude your own main product names if needed:
-        AND LOWER(JSON_EXTRACT_SCALAR(entity, '$.text')) NOT IN ('hotel marrakesh', 'product a')
+        AND LOWER(matches) NOT IN ('hotel marrakesh', 'product a')
         GROUP BY 1
         HAVING mentions > 0
         ORDER BY mentions DESC
@@ -399,37 +396,3 @@ def page_competition():
         st.altair_chart(chart, use_container_width=True)
     else:
         st.warning("No competitor mentions found in the current dataset.")
-
-
-# # --- Main App Navigation ---
-# def main():
-#     st.sidebar.title("VoiceLens 🧠")
-#     st.sidebar.info("Diagnostic Analytics Dashboard")
-#     st.sidebar.markdown("---")
-
-#     # Navigation Menu
-#     page = st.sidebar.radio(
-#         "Select Insight:",
-#         [
-#             "1. Root Cause Analysis",
-#             "2. Geo Hotspots",
-#             "3. Product Features",
-#             "4. Emerging Trends",
-#             "5. Competitive Intel",
-#         ],
-#     )
-
-#     if page == "1. Root Cause Analysis":
-#         page_root_cause()
-#     elif page == "2. Geo Hotspots":
-#         page_geo_hotspots()
-#     elif page == "3. Product Features":
-#         page_product_features()
-#     elif page == "4. Emerging Trends":
-#         page_emerging_trends()
-#     elif page == "5. Competitive Intel":
-#         page_competition()
-
-
-# if __name__ == "__main__":
-#     main()
