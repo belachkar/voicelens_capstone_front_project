@@ -41,19 +41,52 @@ def page_root_cause():
     st.markdown(
         """
     **Goal:** Diagnose sudden dips in sentiment.
-    *Select a specific time window on the chart below to see which topics caused the drop.*
+    *Select a specific time window below to analyze sentiment trends and identify the topics causing drops.*
     """
     )
 
-    # 1. Time Series Chart
-    # CAST review_date (DATETIME) to DATE for daily aggregation
+    # 1. PRE-QUERY: Get dynamic Date Bounds from the database (Post-2021)
+    # We run this small query first to know what range to show in the date picker.
+    bounds_query = f"""
+        SELECT
+            MIN(DATE(review_date)) as min_date,
+            MAX(DATE(review_date)) as max_date
+        FROM {BQ_TABLE_REF}
+        WHERE CAST(review_date AS DATE) >= '2021-01-01'
+    """
+    bounds_df = load_data_from_bq(bounds_query)
+
+    # Set defaults. If DB is empty, fallback to today.
+    if not bounds_df.empty and pd.notnull(bounds_df.iloc[0]["min_date"]):
+        min_db_date = bounds_df.iloc[0]["min_date"]
+        max_db_date = bounds_df.iloc[0]["max_date"]
+    else:
+        min_db_date = pd.to_datetime("2021-01-01").date()
+        max_db_date = pd.to_datetime("today").date()
+
+    # 2. Date Inputs (Dynamic Defaults)
+    col1, col2 = st.columns(2)
+
+    start_date = col1.date_input(
+        "Start Date", value=min_db_date, min_value=min_db_date, max_value=max_db_date
+    )
+    end_date = col2.date_input(
+        "End Date", value=max_db_date, min_value=min_db_date, max_value=max_db_date
+    )
+
+    if start_date > end_date:
+        st.error("Error: End date must fall after start date.")
+        return
+
+    # 3. Time Series Chart (Dynamic Query)
+    # Uses LOWER() for safety and filters >= 2021
     ts_query = f"""
         SELECT
             DATE(review_date) as date,
             COUNT(review_id) as volume,
-            SAFE_DIVIDE(COUNTIF(predicted_sentiment = 'negative'), COUNT(review_id)) as negative_rate
+            SAFE_DIVIDE(COUNTIF(LOWER(predicted_sentiment) = 'negative'), COUNT(review_id)) as negative_rate
         FROM {BQ_TABLE_REF}
-        WHERE review_date > '2020-01-01'
+        WHERE DATE(review_date) BETWEEN '{start_date}' AND '{end_date}'
         GROUP BY 1
         ORDER BY 1
     """
@@ -71,41 +104,26 @@ def page_root_cause():
                 y=alt.Y(
                     "negative_rate",
                     axis=alt.Axis(format="%"),
-                    title="negative Sentiment Rate",
+                    title="Negative Sentiment Rate",
+                    scale=alt.Scale(domain=[0, 1.1]),  # Adds 10% breathing room at top
                 ),
                 tooltip=["date", alt.Tooltip("negative_rate", format=".1%")],
             )
             .add_params(brush)
-            .properties(height=300, title="Select a date range here:")
+            .properties(height=300, title="Sentiment Trend over Selected Period")
         )
 
         st.altair_chart(line, use_container_width=True)
 
-        # 2. Filter Inputs
-        col1, col2 = st.columns(2)
-        st.info("👇 **Drill Down:** Adjust these dates to match the dip you see above.")
-
-        # Safe date handling for dummy data
-        min_date = pd.to_datetime(ts_df["date"]).min().date()
-        max_date = pd.to_datetime(ts_df["date"]).max().date()
-
-        start_date = col1.date_input(
-            "Start Date", min_date, min_value=min_date, max_value=max_date
-        )
-        end_date = col2.date_input(
-            "End Date", max_date, min_value=min_date, max_value=max_date
-        )
-
-        # 3. Root Cause Query
+        # 4. Root Cause Topic Query
         st.subheader(f"Top Negative Topics ({start_date} to {end_date})")
 
-        # Cleaned 'predicted_topic' to remove "Topic: " prefix
         topic_query = f"""
             SELECT
                 REPLACE(predicted_topic, 'Topic: ', '') as simple_topic,
                 COUNT(review_id) as negative_mentions
             FROM {BQ_TABLE_REF}
-            WHERE predicted_sentiment = 'negative'
+            WHERE LOWER(predicted_sentiment) = 'negative'
             AND DATE(review_date) BETWEEN '{start_date}' AND '{end_date}'
             GROUP BY 1
             ORDER BY 2 DESC
@@ -131,6 +149,8 @@ def page_root_cause():
             )
         else:
             st.warning("No negative reviews found in this selected date range.")
+    else:
+        st.warning("No data found for this date range.")
 
 
 # ==========================================
@@ -140,14 +160,20 @@ def page_geo_hotspots():
     st.title("🌍 Geographical Hotspots")
     st.markdown("**Goal:** Identify regions with specific support or logistics issues.")
 
+    # FIX: Rewrote SAFE_DIVIDE denominator to ensure non-NULL sentiment is counted.
     geo_query = f"""
         SELECT
             location,
             COUNT(review_id) as total_reviews,
-            SAFE_DIVIDE(COUNTIF(predicted_sentiment = 'negative'), COUNT(review_id)) as negative_pct
+            SAFE_DIVIDE(
+                COUNTIF(LOWER(predicted_sentiment) = 'negative'),
+                COUNTIF(predicted_sentiment IS NOT NULL)
+            ) as negative_pct
         FROM {BQ_TABLE_REF}
         WHERE location IS NOT NULL
-          AND location != ''
+          AND LENGTH(location) = 2
+          AND REGEXP_CONTAINS(location, r'^[A-Z]{{2}}$')
+          AND CAST(review_date AS DATE) >= '2021-01-01'
         GROUP BY 1
         HAVING total_reviews > 0
         ORDER BY negative_pct DESC
@@ -166,6 +192,7 @@ def page_geo_hotspots():
                     "negative_pct",
                     axis=alt.Axis(format="%"),
                     title="% Negative Reviews",
+                    scale=alt.Scale(domain=[0, 1.05]),
                 ),
                 y=alt.Y("location", sort="-x", title="Location"),
                 color=alt.Color(
@@ -185,6 +212,10 @@ def page_geo_hotspots():
         worst_loc = geo_df.iloc[0]["location"]
         st.warning(
             f"📍 **Action Required:** **{worst_loc}** is showing the highest rate of customer dissatisfaction."
+        )
+    else:
+        st.warning(
+            "No valid location data found (looking for 2-letter country codes post-2021)."
         )
 
 
