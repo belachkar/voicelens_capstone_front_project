@@ -52,7 +52,7 @@ def remove_review(i):
 # INPUT SECTION
 # -----------------------
 st.markdown("### ✍️ Enter Reviews")
-st.write("API URL:", API_URL)
+# st.write("API URL:", API_URL)
 
 for i, text in enumerate(st.session_state.reviews):
     with stylable_container(
