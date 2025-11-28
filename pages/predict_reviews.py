@@ -114,7 +114,7 @@ if run_predict:
             response = requests.post(
                 API_URL,
                 json={"reviews": reviews_cleaned},
-                timeout=20,
+                timeout=200,
             )
             response.raise_for_status()
             predictions = response.json()
