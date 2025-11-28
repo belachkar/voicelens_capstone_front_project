@@ -1,3 +1,5 @@
+import os
+
 import requests
 import streamlit as st
 from streamlit_extras.add_vertical_space import add_vertical_space
@@ -7,7 +9,13 @@ from streamlit_extras.stylable_container import stylable_container
 # -----------------------
 # CONFIG
 # -----------------------
-API_URL = "http://localhost:8000/predict"  # Change for deployed API
+if "API_URI" in os.environ:
+    BASE_URI = st.secrets[os.environ.get("API_URI")]
+else:
+    BASE_URI = st.secrets.get("cloud_api_uri", "")
+
+BASE_URI = BASE_URI if BASE_URI.endswith("/") else BASE_URI + "/"
+API_URL = BASE_URI + "predict"
 
 st.set_page_config(
     page_title="Voicelens Review Predictor",
@@ -18,7 +26,7 @@ st.set_page_config(
 # PAGE HEADER
 # -----------------------
 colored_header(
-    label="🔮 Voicelens Review Intelligence",
+    label="🔮 Voicelens Review IntelligenceBASE_URI",
     description="Upload or write multiple reviews and get automatic predictions for sentiment & entities.",
     color_name="blue-70",
 )
@@ -44,6 +52,7 @@ def remove_review(i):
 # INPUT SECTION
 # -----------------------
 st.markdown("### ✍️ Enter Reviews")
+st.write("API URL:", API_URL)
 
 for i, text in enumerate(st.session_state.reviews):
     with stylable_container(
@@ -102,7 +111,11 @@ if run_predict:
 
     with st.spinner("Contacting AI model..."):
         try:
-            response = requests.post(API_URL, json={"reviews": reviews_cleaned}, timeout=20)
+            response = requests.post(
+                API_URL,
+                json={"reviews": reviews_cleaned},
+                timeout=20,
+            )
             response.raise_for_status()
             predictions = response.json()
 
