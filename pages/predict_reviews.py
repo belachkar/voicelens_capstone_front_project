@@ -15,7 +15,7 @@ else:
     BASE_URI = st.secrets.get("cloud_api_uri", "")
 
 BASE_URI = BASE_URI if BASE_URI.endswith("/") else BASE_URI + "/"
-url = BASE_URI + "predict"
+API_URL = BASE_URI + "predict"
 
 st.set_page_config(
     page_title="Voicelens Review Predictor",
@@ -52,6 +52,7 @@ def remove_review(i):
 # INPUT SECTION
 # -----------------------
 st.markdown("### ✍️ Enter Reviews")
+st.write("API URL:", API_URL)
 
 for i, text in enumerate(st.session_state.reviews):
     with stylable_container(
@@ -111,7 +112,7 @@ if run_predict:
     with st.spinner("Contacting AI model..."):
         try:
             response = requests.post(
-                url,
+                API_URL,
                 json={"reviews": reviews_cleaned},
                 timeout=20,
             )
