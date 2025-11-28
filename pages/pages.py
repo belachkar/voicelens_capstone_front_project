@@ -127,7 +127,7 @@ def page_root_cause():
             AND DATE(review_date) BETWEEN '{start_date}' AND '{end_date}'
             GROUP BY 1
             ORDER BY 2 DESC
-            LIMIT 10
+            LIMIT 4
         """
         topic_df = load_data_from_bq(topic_query)
 
@@ -172,12 +172,12 @@ def page_geo_hotspots():
         FROM {BQ_TABLE_REF}
         WHERE location IS NOT NULL
           AND LENGTH(location) = 2
-          AND REGEXP_CONTAINS(location, r'^[A-Z]{{2}}$')
-          AND CAST(review_date AS DATE) >= '2021-01-01'
+          --AND REGEXP_CONTAINS(location, r'^[A-Z]{{2}}$')
+          --AND CAST(review_date AS DATE) >= '2021-01-01'
         GROUP BY 1
         HAVING total_reviews > 0
         ORDER BY negative_pct DESC
-        LIMIT 20
+        --LIMIT 20
     """
     geo_df = load_data_from_bq(geo_query)
 
@@ -209,6 +209,66 @@ def page_geo_hotspots():
 
         st.altair_chart(chart, use_container_width=True)
 
+        # # Option A — Vertical Expansion + Scrollable Chart (Best UX in Streamlit)
+        # # FIXED height chart (doesn’t expand)
+        # chart = (
+        #     alt.Chart(geo_df)
+        #     .mark_bar()
+        #     .encode(
+        #         x=alt.X(
+        #             "negative_pct",
+        #             axis=alt.Axis(format="%"),
+        #             title="% Negative Reviews",
+        #             scale=alt.Scale(domain=[0, 1.05]),
+        #         ),
+        #         y=alt.Y("location:N", sort="-x", title="Location"),
+        #         color=alt.Color("negative_pct:Q", scale=alt.Scale(scheme="reds")),
+        #         tooltip=[
+        #             "location",
+        #             "total_reviews",
+        #             alt.Tooltip("negative_pct:Q", format=".1%"),
+        #         ],
+        #     )
+        #     .properties(width="container", height=2500)   # <— increased height
+        # )
+
+        # # scrollable container
+        # st.markdown("""
+        # <div style="height:700px; overflow-y: scroll; border:1px solid #ddd; padding:10px;">
+        # """, unsafe_allow_html=True)
+
+        # st.altair_chart(chart, use_container_width=True)
+        # st.markdown("</div>", unsafe_allow_html=True)
+
+        # # Option B — Switch to a Choropleth Map (Best visualization for many regions)
+        # import altair as alt
+        # from vega_datasets import data
+
+        # countries = data.world_110m()
+        # geojson = alt.topo_feature(countries, "countries")
+
+        # df_geo = geo_df.rename(columns={"location": "id"})  # id must match ISO code
+
+        # chart = alt.Chart(geojson).mark_geoshape().encode(
+        #     color=alt.Color("negative_pct:Q", scale=alt.Scale(scheme="reds"), title="% Negative"),
+        #     tooltip=["id:N", alt.Tooltip("negative_pct:Q", format=".1%"), "total_reviews:Q"]
+        # ).transform_lookup(
+        #     lookup="id",
+        #     from_=alt.LookupData(df_geo, "id", ["negative_pct", "total_reviews"])
+        # ).properties(
+        #     width="container",
+        #     height=550
+        # ).project("naturalEarth1")
+
+        # st.altair_chart(chart, use_container_width=True)
+
+        # # Option C — Paginated Table + Sparkline (Super clean)
+        # st.dataframe(
+        #     geo_df.sort_values("negative_pct", ascending=False)
+        #         .style.background_gradient(subset=["negative_pct"], cmap="Reds")
+        # )
+
+        # Worst Location Information
         worst_loc = geo_df.iloc[0]["location"]
         st.warning(
             f"📍 **Action Required:** **{worst_loc}** is showing the highest rate of customer dissatisfaction."
@@ -402,28 +462,110 @@ def page_competition():
     if not df.empty:
         st.subheader("Competitor/Entity Sentiment Association")
 
+        # chart = (
+        #     alt.Chart(df)
+        #     .mark_circle()
+        #     .encode(
+        #         x=alt.X("mentions", title="Mention Volume"),
+        #         y=alt.Y(
+        #             "negative_association_pct",
+        #             axis=alt.Axis(format="%"),
+        #             title="% Negative Context",
+        #         ),
+        #         size=alt.value(200),
+        #         color=alt.Color("competitor", legend=None),
+        #         tooltip=[
+        #             "competitor",
+        #             "mentions",
+        #             alt.Tooltip("negative_association_pct", format=".1%"),
+        #         ],
+        #     )
+        #     .mark_text(align="left", dx=15)
+        #     .encode(text="competitor")
+        # )
+        # st.altair_chart(chart, use_container_width=True)
+
+        # # Chart: Option 1 — Bubble Chart With Non-Overlapping Labels (Tooltips Only)
+        # chart = (
+        #     alt.Chart(df)
+        #     .mark_circle(opacity=0.7)
+        #     .encode(
+        #         x=alt.X("mentions", title="Mention Volume"),
+        #         y=alt.Y("negative_association_pct", title="% Negative Context", axis=alt.Axis(format="%")),
+        #         size=alt.Size("mentions", scale=alt.Scale(range=[100, 1500])),
+        #         color=alt.Color("competitor:N", title="Competitor"),
+        #         tooltip=[
+        #             alt.Tooltip("competitor:N", title="Competitor"),
+        #             alt.Tooltip("mentions:Q", title="Mentions"),
+        #             alt.Tooltip("negative_association_pct:Q", title="Neg. %", format=".1%"),
+        #         ],
+        #     )
+        # ).properties(height=450)
+
+        # st.altair_chart(chart, use_container_width=True)
+
+        # # Chart: Option 2 — Bubble Chart With Labels Inside Circles
+        # base = alt.Chart(df).encode(
+        #     x=alt.X("mentions", title="Mention Volume"),
+        #     y=alt.Y("negative_association_pct", title="% Negative Context", axis=alt.Axis(format="%")),
+        # )
+
+        # circles = base.mark_circle(opacity=0.6).encode(
+        #     size=alt.Size("mentions", scale=alt.Scale(range=[200, 1800])),
+        #     color=alt.Color("competitor:N", legend=None),
+        # )
+
+        # labels = base.mark_text(
+        #     dy=2,  # slight downward offset
+        #     fontSize=10,
+        #     fontWeight="bold",
+        #     color="white",
+        # ).encode(text="competitor:N")
+
+        # chart = (circles + labels).properties(height=450)
+
+        # st.altair_chart(chart, use_container_width=True)
+        # Chart: Option 3 — Horizontal Bar Chart (Best readability if many competitors)
         chart = (
             alt.Chart(df)
-            .mark_circle()
+            .mark_bar(cornerRadius=4)
             .encode(
-                x=alt.X("mentions", title="Mention Volume"),
-                y=alt.Y(
-                    "negative_association_pct",
-                    axis=alt.Axis(format="%"),
-                    title="% Negative Context",
-                ),
-                size=alt.value(200),
-                color=alt.Color("competitor", legend=None),
+                y=alt.Y("competitor:N", sort="-x", title="Competitor"),
+                x=alt.X("mentions:Q", title="Mention Volume"),
+                color=alt.Color("negative_association_pct:Q", scale=alt.Scale(scheme="reds")),
                 tooltip=[
                     "competitor",
                     "mentions",
                     alt.Tooltip("negative_association_pct", format=".1%"),
                 ],
             )
-            .mark_text(align="left", dx=15)
-            .encode(text="competitor")
-        )
+        ).properties(height=450)
 
         st.altair_chart(chart, use_container_width=True)
+
+        # Option 4 — Scatter Plot With Force-Directed Label Layout (Best but more code)
+        base = alt.Chart(df).encode(
+            x=alt.X("mentions", title="Mention Volume"),
+            y=alt.Y("negative_association_pct", title="% Negative Context", axis=alt.Axis(format="%"))
+        )
+
+        points = base.mark_circle(size=250, opacity=0.6).encode(
+            color="competitor:N",
+            tooltip=["competitor", "mentions", alt.Tooltip("negative_association_pct", format=".1%")],
+        )
+
+        labels = base.mark_text(
+            align="left",
+            dx=10,
+            dy=0,
+            fontSize=10,
+            fontWeight="bold",
+        ).encode(text="competitor")
+
+        chart = (points + labels).properties(height=450)
+
+        st.altair_chart(chart, use_container_width=True)
+
+
     else:
         st.warning("No competitor mentions found in the current dataset.")
