@@ -67,17 +67,17 @@ PAGES = {
 
 # Sidebar Navigation
 with st.sidebar:
-    st.image(
-        "https://placehold.co/150x50/1e293b/ffffff?text=REVIEW+INSIGHTS",
-        use_column_width=False,
-    )
+    # st.image(
+    #     "https://placehold.co/150x50/1e293b/ffffff?text=REVIEW+INSIGHTS",
+    #     use_column_width=False,
+    # )
     st.header("Navigation")
     selection = st.selectbox("Go to...", list(PAGES.keys()))
 
-    st.markdown("---")
-    st.info(
-        "Data is sourced from BigQuery table: **" + BQ_TABLE_REF.replace("`", "") + "**"
-    )
+    # st.markdown("---")
+    # st.info(
+    #     "Data is sourced from BigQuery table: **" + BQ_TABLE_REF.replace("`", "") + "**"
+    # )
 
 # DEBUGGING BQ Tables
 # list_tables_debug()
