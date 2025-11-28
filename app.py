@@ -76,7 +76,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.info("BASE_URI: **" + BASE_URI)
-    st.info("os.environ: **" + os.environ)
+    # st.info("os.environ: **" + os.environ)
     # st.info(
     #     "Data is sourced from BigQuery table: **" + BQ_TABLE_REF.replace("`", "") + "**"
     # )
