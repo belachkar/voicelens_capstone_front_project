@@ -61,8 +61,8 @@ PAGES = {
     "1. Root Cause Analysis": page_root_cause,
     "2. Geo Hotspots": page_geo_hotspots,
     "3. Product Features": page_product_features,
-    "4. Emerging Trends": page_emerging_trends,
-    "5. Competitive Intel": page_competition,
+    "4. Competitive Intel": page_competition,
+    # "5. Emerging Trends": page_emerging_trends,
 }
 
 # Sidebar Navigation

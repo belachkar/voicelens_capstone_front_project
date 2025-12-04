@@ -26,7 +26,7 @@ st.set_page_config(
 # PAGE HEADER
 # -----------------------
 colored_header(
-    label="🔮 Voicelens Review IntelligenceBASE_URI",
+    label="🔮 Voicelens Review Intelligence",
     description="Upload or write multiple reviews and get automatic predictions for sentiment & entities.",
     color_name="blue-70",
 )
@@ -123,7 +123,7 @@ if run_predict:
             st.error(f"Error contacting API: {e}")
             st.stop()
 
-    st.markdown("## 📊 Results")
+    st.markdown("## Results")
 
     # DISPLAY RESULTS
     for i, pred in enumerate(predictions):
