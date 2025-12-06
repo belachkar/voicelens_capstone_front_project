@@ -175,9 +175,9 @@ def page_geo_hotspots():
           --AND REGEXP_CONTAINS(location, r'^[A-Z]{{2}}$')
           --AND CAST(review_date AS DATE) >= '2021-01-01'
         GROUP BY 1
-        HAVING total_reviews > 0
+        HAVING total_reviews > 0 AND negative_pct < 1
         ORDER BY negative_pct DESC
-        --LIMIT 20
+        LIMIT 10
     """
     geo_df = load_data_from_bq(geo_query)
 
@@ -209,36 +209,36 @@ def page_geo_hotspots():
 
         st.altair_chart(chart, use_container_width=True)
 
-        # Option A — Vertical Expansion + Scrollable Chart (Best UX in Streamlit)
-        # FIXED height chart (doesn’t expand)
-        chart = (
-            alt.Chart(geo_df)
-            .mark_bar()
-            .encode(
-                x=alt.X(
-                    "negative_pct",
-                    axis=alt.Axis(format="%"),
-                    title="% Negative Reviews",
-                    scale=alt.Scale(domain=[0, 1.05]),
-                ),
-                y=alt.Y("location:N", sort="-x", title="Location"),
-                color=alt.Color("negative_pct:Q", scale=alt.Scale(scheme="reds")),
-                tooltip=[
-                    "location",
-                    "total_reviews",
-                    alt.Tooltip("negative_pct:Q", format=".1%"),
-                ],
-            )
-            .properties(width="container", height=2500)   # <— increased height
-        )
+        # # Option A — Vertical Expansion + Scrollable Chart (Best UX in Streamlit)
+        # # FIXED height chart (doesn’t expand)
+        # chart = (
+        #     alt.Chart(geo_df)
+        #     .mark_bar()
+        #     .encode(
+        #         x=alt.X(
+        #             "negative_pct",
+        #             axis=alt.Axis(format="%"),
+        #             title="% Negative Reviews",
+        #             scale=alt.Scale(domain=[0, 1.05]),
+        #         ),
+        #         y=alt.Y("location:N", sort="-x", title="Location"),
+        #         color=alt.Color("negative_pct:Q", scale=alt.Scale(scheme="reds")),
+        #         tooltip=[
+        #             "location",
+        #             "total_reviews",
+        #             alt.Tooltip("negative_pct:Q", format=".1%"),
+        #         ],
+        #     )
+        #     .properties(width="container", height=2500)   # <— increased height
+        # )
 
-        # scrollable container
-        st.markdown("""
-        <div style="height:700px; overflow-y: scroll; border:1px solid #ddd; padding:10px;">
-        """, unsafe_allow_html=True)
+        # # scrollable container
+        # st.markdown("""
+        # <div style="height:700px; overflow-y: scroll; border:1px solid #ddd; padding:10px;">
+        # """, unsafe_allow_html=True)
 
-        st.altair_chart(chart, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        # st.altair_chart(chart, use_container_width=True)
+        # st.markdown("</div>", unsafe_allow_html=True)
 
         # # Option B — Switch to a Choropleth Map (Best visualization for many regions)
         # import altair as alt
