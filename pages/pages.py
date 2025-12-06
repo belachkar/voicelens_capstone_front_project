@@ -308,6 +308,8 @@ def page_product_features():
             SAFE_DIVIDE(COUNTIF(predicted_sentiment = 'positive'), COUNT(*)) as positive_pct
         FROM {BQ_TABLE_REF},
         UNNEST(REGEXP_EXTRACT_ALL(extracted_entities, r"\('([^']*)', '(?:PRODUCT|METRIC)'\)")) as matches
+        WHERE LOWER(matches) NOT LIKE '%trustpilot%'
+            AND LOWER(matches) NOT LIKE '%amazon%'
         GROUP BY 1
         HAVING mentions > 0
         ORDER BY mentions DESC
